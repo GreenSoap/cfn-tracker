@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/williamsjokvist/cfn-tracker/pkg/update"
 	"html/template"
 	"log"
 	"log/slog"
@@ -288,5 +289,13 @@ func waitForPrevInstanceToCloseDuringAutoUpdate() {
 			time.Sleep(1 * time.Second)
 
 		}
+	} else {
+		// TODO: Run the auto update procedure for testing purposes : REMOVE AFTER TESTING
+		slog.Warn(`running auto update for testing purposes...`)
+		err := update.HandleAutoUpdate("v4.1.0")
+		if err != nil {
+			slog.Error(fmt.Sprintf(`failed to update: %v`, err))
+		}
+
 	}
 }
