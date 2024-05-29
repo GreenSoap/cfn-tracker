@@ -95,44 +95,7 @@ func main() {
 		}
 	}()
 
-	// If we have a previous instance running, wait for it to close before proceeding
-	if i := lo.IndexOf(os.Args, "--auto-update"); i != -1 {
-		if len(os.Args) < i+2 {
-			panic(`missing pid argument for --auto-update`)
-		}
-		prevInstancePidStr := os.Args[i+1]
-		prevInstancePid, err := strconv.Atoi(prevInstancePidStr)
-		if err != nil {
-			panic(fmt.Sprintf(`failed to convert pid to int: %v`, err))
-		}
-
-		for i := 0; i < 10; i++ {
-
-			// On Unix systems, FindProcess always succeeds and returns a Process
-			// for the given pid, regardless of whether the process exists. To test whether
-			// the process actually exists, see whether p.Signal(syscall.Signal(0)) reports
-			// an error.
-			p, err := os.FindProcess(prevInstancePid)
-			if err != nil {
-				slog.Warn(fmt.Sprintf(`failed (err received) to find previous instance process, it's probably shut down...: %v'`, err))
-				break
-			}
-			if p == nil {
-				slog.Info(`failed to find previous instance process, it's probably shut down...'`)
-				break
-			}
-
-			err = p.Signal(syscall.Signal(0))
-			if err != nil {
-				// The process is not running
-				break
-			}
-
-			slog.Info(`waiting for previous instance to close...`)
-			time.Sleep(1 * time.Second)
-
-		}
-	}
+	waitForPrevInstanceToCloseDuringAutoUpdate()
 
 	var appBrowser *browser.Browser
 	closeWithError := func(err error) {
@@ -284,5 +247,46 @@ func main() {
 	})
 	if err != nil {
 		closeWithError(fmt.Errorf("failed to launch: %w", err))
+	}
+}
+
+func waitForPrevInstanceToCloseDuringAutoUpdate() {
+	// If we have a previous instance running, wait for it to close before proceeding
+	if i := lo.IndexOf(os.Args, "--auto-update"); i != -1 {
+		if len(os.Args) < i+2 {
+			panic(`missing pid argument for --auto-update`)
+		}
+		prevInstancePidStr := os.Args[i+1]
+		prevInstancePid, err := strconv.Atoi(prevInstancePidStr)
+		if err != nil {
+			panic(fmt.Sprintf(`failed to convert pid to int: %v`, err))
+		}
+
+		for i := 0; i < 10; i++ {
+
+			// On Unix systems, FindProcess always succeeds and returns a Process
+			// for the given pid, regardless of whether the process exists. To test whether
+			// the process actually exists, see whether p.Signal(syscall.Signal(0)) reports
+			// an error.
+			p, err := os.FindProcess(prevInstancePid)
+			if err != nil {
+				slog.Warn(fmt.Sprintf(`failed (err received) to find previous instance process, it's probably shut down...: %v'`, err))
+				break
+			}
+			if p == nil {
+				slog.Info(`failed to find previous instance process, it's probably shut down...'`)
+				break
+			}
+
+			err = p.Signal(syscall.Signal(0))
+			if err != nil {
+				// The process is not running
+				break
+			}
+
+			slog.Info(`waiting for previous instance to close...`)
+			time.Sleep(1 * time.Second)
+
+		}
 	}
 }
