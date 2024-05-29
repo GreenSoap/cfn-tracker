@@ -15,6 +15,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/williamsjokvist/cfn-tracker/pkg/update"
 	"html/template"
 	"log"
 	"log/slog"
@@ -95,8 +96,6 @@ func main() {
 		}
 	}()
 
-	waitForPrevInstanceToCloseDuringAutoUpdate()
-
 	var appBrowser *browser.Browser
 	closeWithError := func(err error) {
 		if appBrowser != nil {
@@ -139,7 +138,10 @@ func main() {
 		closeWithError(fmt.Errorf("failed to launch browser: %w", err))
 		return
 	}
-	sqlDb, err := sql.NewStorage(false)
+
+	handleAutoUpdate(appBrowser)
+
+	sqlDb, err := sql.NewStorage()
 	if err != nil {
 		closeWithError(fmt.Errorf("failed to initalize database: %w", err))
 		return
@@ -250,7 +252,7 @@ func main() {
 	}
 }
 
-func waitForPrevInstanceToCloseDuringAutoUpdate() {
+func handleAutoUpdate(appBrowser *browser.Browser) {
 	// If we have a previous instance running, wait for it to close before proceeding
 	if i := lo.IndexOf(os.Args, "--auto-update"); i != -1 {
 		if len(os.Args) < i+2 {
@@ -288,16 +290,13 @@ func waitForPrevInstanceToCloseDuringAutoUpdate() {
 			time.Sleep(1 * time.Second)
 
 		}
+	} else {
+
+		slog.Info(`checking for updates...`)
+		err := update.HandleAutoUpdate(cfg.AppVersion, appBrowser)
+		if err != nil {
+			slog.Error(fmt.Sprintf(`failed to update to latest version: %v`, err))
+		}
 	}
-	//else {
-	//	// TODO: Run the auto update procedure for testing purposes : REMOVE AFTER TESTING
-	//	slog.Warn(`running auto update for testing purposes...`)
-	//	err := update.HandleAutoUpdate("v4.1.0")
-	//	if err != nil {
-	//		slog.Error(fmt.Sprintf(`failed to update: %v`, err))
-	//	}
-	//	slog.Info(`auto update completed successfully, shutting down...`)
-	//	os.Exit(0)
-	//
-	//}
+
 }

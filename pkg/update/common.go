@@ -3,7 +3,10 @@ package update
 import (
 	"fmt"
 	"github.com/go-resty/resty/v2"
+	"github.com/hashicorp/go-version"
+	"github.com/williamsjokvist/cfn-tracker/pkg/browser"
 	"github.com/williamsjokvist/cfn-tracker/pkg/utils"
+	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -15,12 +18,12 @@ import (
 // Prob inject this
 var restyClient = resty.New()
 
-func HandleAutoUpdate(latestVersion string) error {
+func HandleAutoUpdateTo(latestVersion string) error {
 
 	slog.Info(fmt.Sprintf(`HandleAutoUpdate: Starting update to version: %s`, latestVersion))
 
 	zipFileName := getOsSpecificZipFileName()
-	downloadLink := fmt.Sprintf("https://github.com/williamsjokvist/cfn-tracker/releases/download/%s/%s", latestVersion, zipFileName)
+	downloadLink := fmt.Sprintf("https://github.com/williamsjokvist/cfn-tracker/releases/download/v%s/%s", latestVersion, zipFileName)
 	//downloadLink := fmt.Sprintf("/home/johan/cfn.zip")
 	binaryFileName := getOsSpecificBinaryFileName()
 
@@ -32,11 +35,11 @@ func HandleAutoUpdate(latestVersion string) error {
 
 		res, err := request.Get(downloadLink)
 		if err != nil {
-			return fmt.Errorf(`HandleAutoUpdate: Failed to download latest version: %v`, err)
+			return fmt.Errorf(`HandleAutoUpdate: Failed to download latest version: %v: %s`, err, downloadLink)
 		}
 
 		if res.StatusCode() != 200 {
-			return fmt.Errorf(`HandleAutoUpdate: Failed to download latest version: %v`, res.Status())
+			return fmt.Errorf(`HandleAutoUpdate: Failed to download latest version: %v: %s`, res.Status(), downloadLink)
 		}
 
 		zipBytes = res.Body()
@@ -95,6 +98,10 @@ func HandleAutoUpdate(latestVersion string) error {
 	slog.Info(fmt.Sprintf(`HandleAutoUpdate: Launching new process that should know about our pid: %d`, pid))
 	launchProcessForked(currentExePath, "--auto-update", strconv.Itoa(pid))
 
+	// Exit current process
+	slog.Info(`HandleAutoUpdate: Exiting current process`)
+	os.Exit(0)
+
 	return nil
 }
 
@@ -105,4 +112,36 @@ func isArmCpu() bool {
 	default:
 		return false
 	}
+}
+
+func GetVersions(currentVersionStr string, b *browser.Browser) (*version.Version, *version.Version, error) {
+	currentVersion, err := version.NewVersion(currentVersionStr)
+	if err != nil {
+		log.Println(err)
+		return nil, nil, fmt.Errorf(`failed to parse current app version: %w`, err)
+	}
+	latestVersion, err := b.GetLatestAppVersion()
+	if err != nil {
+		log.Println(err)
+		return nil, nil, fmt.Errorf(`failed to check for update: %w`, err)
+	}
+
+	return currentVersion, latestVersion, nil
+}
+
+func HandleAutoUpdate(currentVersionStr string, b *browser.Browser) error {
+
+	currentVersion, latestVersion, err := GetVersions(currentVersionStr, b)
+	if err != nil {
+		return err
+	}
+
+	hasUpdate := currentVersion.LessThan(latestVersion)
+	slog.Info("HandleAutoUpdate", "Has update", hasUpdate, "Current", currentVersion.String(), "Latest", latestVersion.String())
+
+	if !hasUpdate {
+		return nil
+	}
+
+	return HandleAutoUpdateTo(latestVersion.String())
 }
