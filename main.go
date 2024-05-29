@@ -253,6 +253,22 @@ func main() {
 }
 
 func handleAutoUpdate(appBrowser *browser.Browser) {
+
+	deleteOldExe := func() {
+
+		slog.Info("Deleting old exe...")
+		currentExePath, err := os.Executable()
+		if err != nil {
+			slog.Error(fmt.Sprintf(`Failed to get current exe path: %v`, err))
+		}
+
+		err = os.Remove(currentExePath + `.old`)
+		if err != nil {
+			slog.Error(fmt.Sprintf(`Failed to remove current %s.old: %v`, currentExePath, err))
+		}
+
+	}
+
 	// If we have a previous instance running, wait for it to close before proceeding
 	if i := lo.IndexOf(os.Args, "--auto-update"); i != -1 {
 		if len(os.Args) < i+2 {
@@ -273,32 +289,24 @@ func handleAutoUpdate(appBrowser *browser.Browser) {
 			p, err := os.FindProcess(prevInstancePid)
 			if err != nil {
 				slog.Warn(fmt.Sprintf(`failed (err received) to find previous instance process, it's probably shut down...: %v'`, err))
+				deleteOldExe()
 				break
 			}
 			if p == nil {
 				slog.Info(`failed to find previous instance process, it's probably shut down...'`)
+				deleteOldExe()
 				break
 			}
 
 			err = p.Signal(syscall.Signal(0))
 			if err != nil {
 				// The process is not running
+				deleteOldExe()
 				break
 			}
 
 			slog.Info(`waiting for previous instance to close...`)
 			time.Sleep(1 * time.Second)
-
-			slog.Info("Deleting old exe...")
-			currentExePath, err := os.Executable()
-			if err != nil {
-				slog.Error(fmt.Sprintf(`Failed to get current exe path: %v`, err))
-			}
-
-			err = os.Remove(currentExePath + `.old`)
-			if err != nil {
-				slog.Error(fmt.Sprintf(`Failed to remove current %s.old: %v`, currentExePath, err))
-			}
 
 		}
 	} else {
