@@ -288,13 +288,16 @@ func waitForPrevInstanceToCloseDuringAutoUpdate() {
 			time.Sleep(1 * time.Second)
 
 		}
-	} else {
-		// TODO: Run the auto update procedure for testing purposes : REMOVE AFTER TESTING
-		slog.Warn(`running auto update for testing purposes...`)
-		//err := update.HandleAutoUpdate("v4.1.0")
-		//if err != nil {
-		//	slog.Error(fmt.Sprintf(`failed to update: %v`, err))
-		//}
-
 	}
+	//else {
+	//	// TODO: Run the auto update procedure for testing purposes : REMOVE AFTER TESTING
+	//	slog.Warn(`running auto update for testing purposes...`)
+	//	err := update.HandleAutoUpdate("v4.1.0")
+	//	if err != nil {
+	//		slog.Error(fmt.Sprintf(`failed to update: %v`, err))
+	//	}
+	//	slog.Info(`auto update completed successfully, shutting down...`)
+	//	os.Exit(0)
+	//
+	//}
 }

@@ -17,16 +17,16 @@ var restyClient = resty.New()
 
 func HandleAutoUpdate(latestVersion string) error {
 
-	slog.Info(fmt.Sprintf(`HandleAutoUpdate: Latest version: %s`, latestVersion))
+	slog.Info(fmt.Sprintf(`HandleAutoUpdate: Starting update to version: %s`, latestVersion))
 
-	//zipFileName := getOsSpecificZipFileName()
-	//downloadLink := fmt.Sprintf("https://github.com/williamsjokvist/cfn-tracker/releases/download/%s/%s", latestVersion, zipFileName)
-	downloadLink := fmt.Sprintf("/Users/johankjolhede/cfn.zip")
+	zipFileName := getOsSpecificZipFileName()
+	downloadLink := fmt.Sprintf("https://github.com/williamsjokvist/cfn-tracker/releases/download/%s/%s", latestVersion, zipFileName)
+	//downloadLink := fmt.Sprintf("/home/johan/cfn.zip")
 	binaryFileName := getOsSpecificBinaryFileName()
 
 	request := restyClient.R()
 
-	zipBytes := []byte{}
+	var zipBytes []byte
 
 	if strings.HasPrefix(downloadLink, "http") {
 
@@ -55,7 +55,14 @@ func HandleAutoUpdate(latestVersion string) error {
 		return fmt.Errorf(`HandleAutoUpdate: Failed to unzip downloaded zip: %v`, err)
 	}
 
-	exeFileBytes := unzippedFiles[binaryFileName]
+	var exeFileBytes []byte
+	for k := range unzippedFiles {
+		if strings.HasSuffix(k, binaryFileName) {
+			exeFileBytes = unzippedFiles[k]
+			break
+		}
+	}
+
 	if exeFileBytes == nil {
 		return fmt.Errorf(`HandleAutoUpdate: Failed to find exe in downloaded zip`)
 	}
