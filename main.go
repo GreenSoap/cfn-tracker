@@ -289,6 +289,17 @@ func handleAutoUpdate(appBrowser *browser.Browser) {
 			slog.Info(`waiting for previous instance to close...`)
 			time.Sleep(1 * time.Second)
 
+			slog.Info("Deleting old exe...")
+			currentExePath, err := os.Executable()
+			if err != nil {
+				slog.Error(fmt.Sprintf(`Failed to get current exe path: %v`, err))
+			}
+
+			err = os.Remove(currentExePath + `.old`)
+			if err != nil {
+				slog.Error(fmt.Sprintf(`Failed to remove current %s.old: %v`, currentExePath, err))
+			}
+
 		}
 	} else {
 
