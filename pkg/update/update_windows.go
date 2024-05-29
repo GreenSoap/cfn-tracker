@@ -23,7 +23,7 @@ func getOsSpecificBinaryFileName() string {
 func launchProcessForked(binaryFilePath string, args ...string) {
 	cmd := exec.Command(binaryFilePath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true,
+		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
 	}
 	err := cmd.Start()
 	if err != nil {
