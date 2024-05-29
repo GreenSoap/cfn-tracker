@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 )
 
 // Prob inject this
@@ -18,23 +19,38 @@ func HandleAutoUpdate(latestVersion string) error {
 
 	slog.Info(fmt.Sprintf(`HandleAutoUpdate: Latest version: %s`, latestVersion))
 
-	zipFileName := getOsSpecificZipFileName()
-	downloadLink := fmt.Sprintf("https://github.com/williamsjokvist/cfn-tracker/releases/download/%s/%s", latestVersion, zipFileName)
+	//zipFileName := getOsSpecificZipFileName()
+	//downloadLink := fmt.Sprintf("https://github.com/williamsjokvist/cfn-tracker/releases/download/%s/%s", latestVersion, zipFileName)
+	downloadLink := fmt.Sprintf("/Users/johankjolhede/cfn.zip")
 	binaryFileName := getOsSpecificBinaryFileName()
 
 	request := restyClient.R()
 
-	res, err := request.Get(downloadLink)
-	if err != nil {
-		return fmt.Errorf(`HandleAutoUpdate: Failed to download latest version: %v`, err)
-	}
+	zipBytes := []byte{}
 
-	if res.StatusCode() != 200 {
-		return fmt.Errorf(`HandleAutoUpdate: Failed to download latest version: %v`, res.Status())
+	if strings.HasPrefix(downloadLink, "http") {
+
+		res, err := request.Get(downloadLink)
+		if err != nil {
+			return fmt.Errorf(`HandleAutoUpdate: Failed to download latest version: %v`, err)
+		}
+
+		if res.StatusCode() != 200 {
+			return fmt.Errorf(`HandleAutoUpdate: Failed to download latest version: %v`, res.Status())
+		}
+
+		zipBytes = res.Body()
+	} else {
+		bytes, err := os.ReadFile(downloadLink)
+		if err != nil {
+			return fmt.Errorf(`HandleAutoUpdate: Failed to read zip file: %v`, err)
+		}
+
+		zipBytes = bytes
 	}
 
 	// read the whole body
-	unzippedFiles, err := utils.UnzipZipFile(res.Body())
+	unzippedFiles, err := utils.UnzipZipFile(zipBytes)
 	if err != nil {
 		return fmt.Errorf(`HandleAutoUpdate: Failed to unzip downloaded zip: %v`, err)
 	}
@@ -69,6 +85,7 @@ func HandleAutoUpdate(latestVersion string) error {
 
 	// Launch new process forked
 	pid := os.Getpid()
+	slog.Info(fmt.Sprintf(`HandleAutoUpdate: Launching new process that should know about our pid: %d`, pid))
 	launchProcessForked(currentExePath, "--auto-update", strconv.Itoa(pid))
 
 	return nil
