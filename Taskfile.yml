@@ -19,13 +19,56 @@ tasks:
       - wails generate module
 
   build:
-    desc: Build the app
+    internal: true
     vars:
       ldflags: -X 'main.isProduction="true"' -X 'main.appVersion=${APP_VERSION}' -X 'main.steamUsername=${STEAM_USERNAME}' -X 'main.steamPassword=${STEAM_PASSWORD}' -X 'main.capIDEmail=${CAP_ID_EMAIL}' -X 'main.capIDPassword=${CAP_ID_PASSWORD}'
     cmds:
-      - cmd: env GOOS=darwin GOARCH=arm64 wails build -ldflags="{{.ldflags}}"
-        platforms: [darwin]
-      - cmd: GOOS=windows GOARCH=amd64 wails build -ldflags="{{.ldflags}}"
-        platforms: [windows]
-      - cmd: GOOS=linux GOARCH=amd64 wails build -ldflags="{{.ldflags}}"
-        platforms: [linux]
+      - cmd: wails build -ldflags="{{.ldflags}}"
+
+  build-windows-amd64:
+    desc: Build for Linux (x86)
+    env: 
+      GOOS: windows
+      GOARCH: amd64
+    cmds:
+      - task: build
+
+  build-windows-arm64:
+    desc: Build for Windows (arm)
+    env:
+      GOOS: windows 
+      GOARCH: arm64
+    cmds:
+      - task: build
+
+  build-linux-amd64:
+    desc: Build for Linux (x86)
+    env: 
+      GOOS: linux
+      GOARCH: amd64
+    cmds:
+      - task: build
+
+  build-linux-arm64:
+    desc: Build for Linux (arm)
+    env: 
+      GOOS: linux
+      GOARCH: arm64
+    cmds:
+      - task: build
+
+  build-mac-amd64:
+    desc: Build for Mac (x86)
+    env: 
+      GOOS: darwin
+      GOARCH: amd64
+    cmds:
+      - task: build
+
+  build-mac-arm64:
+    desc: Build for Mac (arm)
+    env: 
+      GOOS: darwin
+      GOARCH: arm64
+    cmds:
+      - task: build
