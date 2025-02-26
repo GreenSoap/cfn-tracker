@@ -25,7 +25,7 @@ func UnzipZipFile(in []byte) (map[string][]byte, error) {
 			defer func(f io.ReadCloser) {
 				err := f.Close()
 				if err != nil {
-					slog.Error(fmt.Sprintf(`UpdateToLatestVersion: Failed to close file: %v`, err))
+					slog.Error(fmt.Sprintf("close file: %v", err))
 				}
 			}(f)
 

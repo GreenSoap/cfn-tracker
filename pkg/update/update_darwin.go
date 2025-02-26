@@ -27,6 +27,6 @@ func launchProcessForked(binaryFilePath string, args ...string) {
 	}
 	err := cmd.Start()
 	if err != nil {
-		panic(fmt.Sprintf(`failed to start new process: %v`, err))
+		panic(fmt.Errorf("start new process: %w", err))
 	}
 }

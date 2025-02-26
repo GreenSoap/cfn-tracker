@@ -2,51 +2,48 @@ package update
 
 import (
 	"fmt"
-	"github.com/go-resty/resty/v2"
-	"github.com/hashicorp/go-version"
-	"github.com/williamsjokvist/cfn-tracker/pkg/browser"
-	"github.com/williamsjokvist/cfn-tracker/pkg/utils"
-	"log"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"net/http"
+	"io"
+
+	"github.com/williamsjokvist/cfn-tracker/pkg/utils"
 )
 
-// Prob inject this
-var restyClient = resty.New()
+func HandleAutoUpdateTo(version string) error {
 
-func HandleAutoUpdateTo(latestVersion string) error {
-
-	slog.Info(fmt.Sprintf(`HandleAutoUpdate: Starting update to version: %s`, latestVersion))
+	slog.Info(fmt.Sprintf("starting update to version: %s", version))
 
 	zipFileName := getOsSpecificZipFileName()
-	downloadLink := fmt.Sprintf("https://github.com/williamsjokvist/cfn-tracker/releases/download/v%s/%s", latestVersion, zipFileName)
+	downloadLink := fmt.Sprintf("https://github.com/williamsjokvist/cfn-tracker/releases/download/v%s/%s", version, zipFileName)
 	//downloadLink := fmt.Sprintf("/home/johan/cfn.zip")
 	binaryFileName := getOsSpecificBinaryFileName()
-
-	request := restyClient.R()
 
 	var zipBytes []byte
 
 	if strings.HasPrefix(downloadLink, "http") {
-
-		res, err := request.Get(downloadLink)
+		res, err := http.Get(downloadLink)
 		if err != nil {
-			return fmt.Errorf(`HandleAutoUpdate: Failed to download latest version: %v: %s`, err, downloadLink)
+			return fmt.Errorf("download latest version %w", err)
 		}
 
-		if res.StatusCode() != 200 {
-			return fmt.Errorf(`HandleAutoUpdate: Failed to download latest version: %v: %s`, res.Status(), downloadLink)
+		if res.StatusCode != 200 {
+			return fmt.Errorf("download latest version, got status: %v", res.Status)
 		}
 
-		zipBytes = res.Body()
+		resBody, err := io.ReadAll(res.Body)
+		if err != nil {
+			return fmt.Errorf("read response body: %w", err)
+		}
+		zipBytes = resBody
 	} else {
 		bytes, err := os.ReadFile(downloadLink)
 		if err != nil {
-			return fmt.Errorf(`HandleAutoUpdate: Failed to read zip file: %v`, err)
+			return fmt.Errorf("read zip file: %w", err)
 		}
 
 		zipBytes = bytes
@@ -55,7 +52,7 @@ func HandleAutoUpdateTo(latestVersion string) error {
 	// read the whole body
 	unzippedFiles, err := utils.UnzipZipFile(zipBytes)
 	if err != nil {
-		return fmt.Errorf(`HandleAutoUpdate: Failed to unzip downloaded zip: %v`, err)
+		return fmt.Errorf("unzip file: %w", err)
 	}
 
 	var exeFileBytes []byte
@@ -67,39 +64,39 @@ func HandleAutoUpdateTo(latestVersion string) error {
 	}
 
 	if exeFileBytes == nil {
-		return fmt.Errorf(`HandleAutoUpdate: Failed to find exe in downloaded zip`)
+		return fmt.Errorf("find exe in downloaded zip")
 	}
 
 	currentExePath, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf(`HandleAutoUpdate: Failed to get current exe path: %v`, err)
+		return fmt.Errorf("get current exe path: %v", err)
 	}
 
 	currentExeName := filepath.Base(currentExePath)
 	if currentExeName != binaryFileName {
 		// This is important to avoid deleting/moving a parent process, like go run, during development/testing
-		return fmt.Errorf(`HandleAutoUpdate: Current exe name does not match expected name: %s != %s`, currentExeName, binaryFileName)
+		return fmt.Errorf("current exe name does not match expected name: %s != %s", currentExeName, binaryFileName)
 	}
 
 	// Move the current exe to "CFN Tracker.exe.old"
-	err = os.Rename(currentExePath, currentExePath+`.old`)
+	err = os.Rename(currentExePath, currentExePath+".old")
 	if err != nil {
-		return fmt.Errorf(`HandleAutoUpdate: Failed to rename current exe: %v`, err)
+		return fmt.Errorf("rename current exe: %v", err)
 	}
 
 	// Write the new exe to the current exe path
 	err = os.WriteFile(currentExePath, exeFileBytes, 0755)
 	if err != nil {
-		return fmt.Errorf(`HandleAutoUpdate: Failed to write new exe: %v`, err)
+		return fmt.Errorf("write new exe: %v", err)
 	}
 
 	// Launch new process forked
 	pid := os.Getpid()
-	slog.Info(fmt.Sprintf(`HandleAutoUpdate: Launching new process that should know about our pid: %d`, pid))
+	slog.Info(fmt.Sprintf("launching new process that should know about our pid: %d", pid))
 	launchProcessForked(currentExePath, "--auto-update", strconv.Itoa(pid))
 
 	// Exit current process
-	slog.Info(`HandleAutoUpdate: Exiting current process`)
+	slog.Info("exiting current process")
 	os.Exit(0)
 
 	return nil
@@ -112,36 +109,4 @@ func isArmCpu() bool {
 	default:
 		return false
 	}
-}
-
-func GetVersions(currentVersionStr string, b *browser.Browser) (*version.Version, *version.Version, error) {
-	currentVersion, err := version.NewVersion(currentVersionStr)
-	if err != nil {
-		log.Println(err)
-		return nil, nil, fmt.Errorf(`failed to parse current app version: %w`, err)
-	}
-	latestVersion, err := b.GetLatestAppVersion()
-	if err != nil {
-		log.Println(err)
-		return nil, nil, fmt.Errorf(`failed to check for update: %w`, err)
-	}
-
-	return currentVersion, latestVersion, nil
-}
-
-func HandleAutoUpdate(currentVersionStr string, b *browser.Browser) error {
-
-	currentVersion, latestVersion, err := GetVersions(currentVersionStr, b)
-	if err != nil {
-		return err
-	}
-
-	hasUpdate := currentVersion.LessThan(latestVersion)
-	slog.Info("HandleAutoUpdate", "Has update", hasUpdate, "Current", currentVersion.String(), "Latest", latestVersion.String())
-
-	if !hasUpdate {
-		return nil
-	}
-
-	return HandleAutoUpdateTo(latestVersion.String())
 }

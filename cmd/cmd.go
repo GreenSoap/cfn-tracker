@@ -8,8 +8,6 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/hashicorp/go-version"
-
 	"github.com/williamsjokvist/cfn-tracker/pkg/config"
 	"github.com/williamsjokvist/cfn-tracker/pkg/i18n"
 	"github.com/williamsjokvist/cfn-tracker/pkg/model"
@@ -17,12 +15,11 @@ import (
 	cfgDb "github.com/williamsjokvist/cfn-tracker/pkg/storage/config"
 	"github.com/williamsjokvist/cfn-tracker/pkg/storage/sql"
 	"github.com/williamsjokvist/cfn-tracker/pkg/storage/txt"
-	"github.com/williamsjokvist/cfn-tracker/pkg/update/github"
 )
 
 // The CommandHandler is the interface between the GUI and the core
 type CommandHandler struct {
-	githubClient github.GithubClient
+	hasUpdate bool
 
 	sqlDb *sql.Storage
 	cfgDb *cfgDb.Storage
@@ -30,25 +27,17 @@ type CommandHandler struct {
 	cfg *config.BuildConfig
 }
 
-func NewCommandHandler(githubClient github.GithubClient, sqlDb *sql.Storage, cfgDb *cfgDb.Storage, txtDb *txt.Storage, cfg *config.BuildConfig) *CommandHandler {
+func NewCommandHandler(hasUpdate bool, sqlDb *sql.Storage, cfgDb *cfgDb.Storage, txtDb *txt.Storage, cfg *config.BuildConfig) *CommandHandler {
 	return &CommandHandler{
 		sqlDb:        sqlDb,
 		cfgDb:        cfgDb,
-		githubClient: githubClient,
+		hasUpdate: hasUpdate,
 		cfg:          cfg,
 	}
 }
 
 func (ch *CommandHandler) CheckForUpdate() (bool, error) {
-	currentVersion, err := version.NewVersion(ch.cfg.AppVersion)
-	if err != nil {
-		return false, model.WrapError(model.ErrCheckForUpdate, err)
-	}
-	latestVersion, err := ch.githubClient.GetLatestAppVersion()
-	if err != nil {
-		return false, model.WrapError(model.ErrCheckForUpdate, err)
-	}
-	return currentVersion.LessThan(latestVersion), nil
+	return ch.hasUpdate, nil
 }
 
 func (ch *CommandHandler) GetTranslation(locale string) (*model.Localization, error) {
@@ -65,12 +54,12 @@ func (ch *CommandHandler) GetAppVersion() string {
 
 func (ch *CommandHandler) OpenResultsDirectory() error {
 	switch runtime.GOOS {
-	case `darwin`:
-		if err := exec.Command(`Open`, `./results`).Run(); err != nil {
+	case "darwin":
+		if err := exec.Command("Open", "./results").Run(); err != nil {
 			return model.WrapError(model.ErrOpenResultsDirectory, err)
 		}
-	case `windows`:
-		if err := exec.Command(`explorer.exe`, `.\results`).Run(); err != nil {
+	case "windows":
+		if err := exec.Command("explorer.exe", ".\results").Run(); err != nil {
 			return model.WrapError(model.ErrOpenResultsDirectory, err)
 		}
 	}
@@ -114,7 +103,7 @@ func (ch *CommandHandler) GetThemes() ([]model.Theme, error) {
 	internalThemes := server.GetInternalThemes()
 
 	// get custom themes
-	files, err := os.ReadDir(`themes`)
+	files, err := os.ReadDir("themes")
 	if err != nil {
 		return internalThemes, nil
 	}
@@ -122,14 +111,14 @@ func (ch *CommandHandler) GetThemes() ([]model.Theme, error) {
 	for _, file := range files {
 		fileName := file.Name()
 
-		if !strings.Contains(fileName, `.css`) {
+		if !strings.Contains(fileName, ".css") {
 			continue
 		}
-		css, err := os.ReadFile(fmt.Sprintf(`themes/%s`, fileName))
+		css, err := os.ReadFile(fmt.Sprintf("themes/%s", fileName))
 		if err != nil {
 			return nil, model.WrapError(model.ErrReadThemeCSS, err)
 		}
-		name := strings.Split(fileName, `.css`)[0]
+		name := strings.Split(fileName, ".css")[0]
 
 		customThemes = append(customThemes, model.Theme{
 			Name: name,
