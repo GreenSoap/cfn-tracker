@@ -5,14 +5,10 @@ import (
 	"context"
 	"embed"
 	"fmt"
-	"html/template"
-	"log"
-	"net/http"
-	"os"
-	"strings"
-
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
+	"github.com/samber/lo"
+	"github.com/hashicorp/go-version"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/logger"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -20,6 +16,16 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
 	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"github.com/williamsjokvist/cfn-tracker/pkg/update"
+	"html/template"
+	"log"
+	"log/slog"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
 
 	"github.com/williamsjokvist/cfn-tracker/cmd"
 	"github.com/williamsjokvist/cfn-tracker/pkg/browser"
@@ -35,10 +41,10 @@ import (
 )
 
 var (
-	capIDEmail    string = ``
-	capIDPassword string = ``
-	appVersion    string = ``
-	isProduction  string = ``
+	capIDEmail    string = ""
+	capIDPassword string = ""
+	appVersion    string = ""
+	isProduction  string = ""
 )
 
 //go:embed all:gui/dist
@@ -51,7 +57,7 @@ var cfg config.BuildConfig
 var logFile *os.File
 
 func logToFile() {
-	file, err := os.OpenFile(`cfn-tracker.log`, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644)
+	file, err := os.OpenFile("cfn-tracker.log", os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -62,16 +68,16 @@ func logToFile() {
 }
 
 func init() {
-	if isProduction == `true` {
+	if isProduction == "true" {
 		logToFile()
 	}
 
-	err := godotenv.Load(`.env`)
+	err := godotenv.Load(".env")
 	if err != nil {
-		log.Println(fmt.Errorf(`missing .env file: %w`, err))
+		log.Println(fmt.Errorf("missing .env file: %w", err))
 		cfg = config.BuildConfig{
 			AppVersion:        appVersion,
-			Headless:          isProduction == `true`,
+			Headless:          isProduction == "true",
 			CapIDEmail:        capIDEmail,
 			CapIDPassword:     capIDPassword,
 			BrowserSourcePort: 4242,
@@ -98,7 +104,7 @@ func main() {
 		}
 		log.Println("close with error", err)
 		if err := wails.Run(&options.App{
-			Title:                    `CFN Tracker - Error`,
+			Title:                    "CFN Tracker - Error",
 			Width:                    400,
 			Height:                   148,
 			DisableResize:            true,
@@ -115,44 +121,64 @@ func main() {
 							Error: err.Error(),
 						}
 						if err := tmpl.Execute(&b, params); err != nil {
-							log.Println("failed to write error template: ", err)
+							log.Println("write error template: ", err)
 						}
 						_, err := w.Write(b.Bytes())
 						if err != nil {
-							log.Println("failed to write error page: ", err)
+							log.Println("write error page: ", err)
 						}
 					})
 				}),
 			},
 		}); err != nil {
-			log.Println("failed to launch error app")
+			log.Println("launch error app")
 		}
 	}
 	appBrowser, err := browser.NewBrowser(cfg.Headless)
 	if err != nil {
-		closeWithError(fmt.Errorf("failed to launch browser: %w", err))
+		closeWithError(fmt.Errorf("launch browser: %w", err))
 		return
 	}
+
+	githubClient := github.NewClient()
+
+	appVersion, err := version.NewVersion(cfg.AppVersion)
+	if err != nil {
+		closeWithError(fmt.Errorf("parse app version: %w", err))
+		return
+	}
+	latestAppVersion, err := githubClient.GetLatestAppVersion()
+	if err != nil {
+		// maybe shouldn't close the app on this
+		closeWithError(fmt.Errorf("parse latest app version: %w", err))
+		return
+	}
+	newUpdateAvailable := appVersion.LessThan(latestAppVersion)
+	if newUpdateAvailable {
+		handleAutoUpdate(latestAppVersion.Original())
+		return
+	}
+
 	sqlDb, err := sql.NewStorage(false)
 	if err != nil {
-		closeWithError(fmt.Errorf("failed to initalize database: %w", err))
+		closeWithError(fmt.Errorf("initalize database: %w", err))
 		return
 	}
 	noSqlDb, err := cfgDb.NewStorage()
 	if err != nil {
-		closeWithError(fmt.Errorf("failed to initalize app config: %w", err))
+		closeWithError(fmt.Errorf("initalize app config: %w", err))
 		return
 	}
 	txtDb, err := txt.NewStorage()
 	if err != nil {
-		closeWithError(fmt.Errorf("failed to initalize text store: %w", err))
+		closeWithError(fmt.Errorf("initalize text store: %w", err))
 		return
 	}
 
 	browserSrcMatchChan := make(chan model.Match, 1)
 
 	cmdHandler := cmd.NewCommandHandler(
-		github.NewClient(),
+		newUpdateAvailable,
 		sqlDb,
 		noSqlDb,
 		txtDb,
@@ -172,7 +198,7 @@ func main() {
 
 	var onSecondInstanceLaunch func(secondInstanceData options.SecondInstanceData)
 	err = wails.Run(&options.App{
-		Title:              fmt.Sprintf(`CFN Tracker v%s`, appVersion),
+		Title:              fmt.Sprintf("CFN Tracker v%s", appVersion),
 		Assets:             assets,
 		Width:              920,
 		Height:             450,
@@ -187,7 +213,7 @@ func main() {
 		LogLevelProduction: logger.ERROR,
 		ErrorFormatter:     model.FormatError,
 		BackgroundColour:   options.NewRGBA(0, 0, 0, 1),
-		CSSDragProperty:    `--draggable`,
+		CSSDragProperty:    "--draggable",
 		Windows: &windows.Options{
 			WebviewIsTransparent:              false,
 			WindowIsTranslucent:               false,
@@ -197,8 +223,8 @@ func main() {
 		Mac: &mac.Options{
 			TitleBar: mac.TitleBarHiddenInset(),
 			About: &mac.AboutInfo{
-				Title:   fmt.Sprintf(`CFN Tracker v%s`, appVersion),
-				Message: fmt.Sprintf(`CFN Tracker version %s © 2023 William Sjökvist <william.sjokvist@gmail.com>`, appVersion),
+				Title:   fmt.Sprintf("CFN Tracker v%s", appVersion),
+				Message: fmt.Sprintf("CFN Tracker version %s © 2023 William Sjökvist <william.sjokvist@gmail.com>", appVersion),
 			},
 		},
 		OnDomReady: func(ctx context.Context) {
@@ -240,6 +266,71 @@ func main() {
 		},
 	})
 	if err != nil {
-		closeWithError(fmt.Errorf("failed to launch: %w", err))
+		closeWithError(fmt.Errorf("launch: %w", err))
 	}
+}
+
+func handleAutoUpdate(versionStr string) {
+	deleteOldExe := func() {
+		slog.Info("Deleting old exe...")
+		currentExePath, err := os.Executable()
+		if err != nil {
+			slog.Error(fmt.Sprintf("get current exe path: %v", err))
+		}
+
+		err = os.Remove(currentExePath + ".old")
+		if err != nil {
+			slog.Error(fmt.Sprintf("remove current %s.old: %v", currentExePath, err))
+		}
+
+	}
+
+	// If we have a previous instance running, wait for it to close before proceeding
+	if i := lo.IndexOf(os.Args, "--auto-update"); i != -1 {
+		if len(os.Args) < i+2 {
+			panic("missing pid argument for --auto-update")
+		}
+		prevInstancePidStr := os.Args[i+1]
+		prevInstancePid, err := strconv.Atoi(prevInstancePidStr)
+		if err != nil {
+			panic(fmt.Sprintf("convert pid to int: %v", err))
+		}
+
+		for i := 0; i < 10; i++ {
+
+			// On Unix systems, FindProcess always succeeds and returns a Process
+			// for the given pid, regardless of whether the process exists. To test whether
+			// the process actually exists, see whether p.Signal(syscall.Signal(0)) reports
+			// an error.
+			p, err := os.FindProcess(prevInstancePid)
+			if err != nil {
+				slog.Warn(fmt.Sprintf("failed (err received) to find previous instance process, it's probably shut down...: %v'", err))
+				deleteOldExe()
+				break
+			}
+			if p == nil {
+				slog.Info("find previous instance process, it's probably shut down...'")
+				deleteOldExe()
+				break
+			}
+
+			err = p.Signal(syscall.Signal(0))
+			if err != nil {
+				// The process is not running
+				deleteOldExe()
+				break
+			}
+
+			slog.Info("waiting for previous instance to close...")
+			time.Sleep(1 * time.Second)
+
+		}
+	} else {
+		slog.Info("checking for updates...")
+		err := update.HandleAutoUpdateTo(versionStr)
+		if err != nil {
+			slog.Error(fmt.Sprintf("update to latest version: %v", err))
+		}
+	}
+
 }
